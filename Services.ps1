@@ -162,6 +162,85 @@ function Get-ExtraChecks {
     return $checks
 }
 
+function Set-RegValue {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] $Value,
+        [string] $Type = "DWord"
+    )
+    if (-not (Test-Path $Path)) { New-Item -Path $Path -Force | Out-Null }
+    Set-ItemProperty -Path $Path -Name $Name -Value $Value -Type $Type -ErrorAction SilentlyContinue
+}
+
+function Remove-RegValue {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string] $Name
+    )
+    try { Remove-ItemProperty -Path $Path -Name $Name -ErrorAction Stop } catch {}
+}
+
+function Set-ExtraSettings {
+    param([ValidateSet("Enable","Disable")] [string] $Mode)
+
+    $sid = try { [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value } catch { $null }
+    $bamPaths = @("HKLM:\SYSTEM\CurrentControlSet\Services\bam\State\UserSettings")
+    if ($sid) { $bamPaths += Join-Path $bamPaths[0] $sid }
+
+    foreach ($p in $bamPaths) {
+        try {
+            $acl = Get-Acl -Path $p -ErrorAction Stop
+            if ($Mode -eq "Enable") {
+                $acl.SetAccessRuleProtection($false, $false)
+            } else {
+                $acl.SetAccessRuleProtection($true, $true)
+            }
+            Set-Acl -Path $p -AclObject $acl -ErrorAction SilentlyContinue
+        } catch {}
+    }
+    Write-Host ("  {0} BAM Inheritance: {1}" -f $Theme.Snow, $(if ($Mode -eq "Enable") { "Restored" } else { "Terminated" })) -ForegroundColor $Theme.Primary
+
+    $polLM = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
+    $polCU = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
+    $advCU = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
+    if ($Mode -eq "Enable") {
+        Remove-RegValue $polLM "NoRecentDocsHistory"
+        Remove-RegValue $polCU "NoRecentDocsHistory"
+        Set-RegValue $advCU "Start_TrackDocs" 1
+    } else {
+        Set-RegValue $polCU "NoRecentDocsHistory" 1
+        Set-RegValue $advCU "Start_TrackDocs" 0
+    }
+    Write-Host ("  {0} JumpLists: {1}" -f $Theme.Snow, $(if ($Mode -eq "Enable") { "Enabled" } else { "Disabled" })) -ForegroundColor $Theme.Primary
+
+    $ctlPath = "HKLM:\SYSTEM\CurrentControlSet\Control"
+    if ($Mode -eq "Enable") {
+        Set-RegValue $ctlPath "WaitToKillServiceTimeout" "5000" -Type "String"
+    } else {
+        Set-RegValue $ctlPath "WaitToKillServiceTimeout" "1000" -Type "String"
+    }
+    Write-Host ("  {0} Service Threads: {1}" -f $Theme.Snow, $(if ($Mode -eq "Enable") { "Enabled (5000ms)" } else { "Terminated (1000ms)" })) -ForegroundColor $Theme.Primary
+
+    Write-Host ("  {0} DPS Tokens: {1} (follows DPS service)" -f $Theme.Snow, $(if ($Mode -eq "Enable") { "Enabled" } else { "Disabled" })) -ForegroundColor $Theme.Primary
+
+    $sysPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\System"
+    if ($Mode -eq "Enable") {
+        Remove-RegValue $sysPath "EnableActivityFeed"
+    } else {
+        Set-RegValue $sysPath "EnableActivityFeed" 0
+    }
+    Write-Host ("  {0} Activities Cache: {1}" -f $Theme.Snow, $(if ($Mode -eq "Enable") { "Enabled" } else { "Disabled" })) -ForegroundColor $Theme.Primary
+
+    $pfPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters"
+    if ($Mode -eq "Enable") {
+        Set-RegValue $pfPath "EnablePrefetcher" 3
+    } else {
+        Set-RegValue $pfPath "EnablePrefetcher" 0
+    }
+    Write-Host ("  {0} EnablePrefetcher: {1}" -f $Theme.Snow, $(if ($Mode -eq "Enable") { "Enabled" } else { "Disabled" })) -ForegroundColor $Theme.Primary
+}
+
 function Set-TargetStartup {
     param(
         [Parameter(Mandatory)] $Target,
@@ -212,6 +291,8 @@ do {
                 Set-TargetStartup -Target $t -Mode Automatic
             }
             Write-Host ""
+            Set-ExtraSettings -Mode Enable
+            Write-Host ""
             Write-Host ("  {0} Done." -f $Theme.Snow) -ForegroundColor $Theme.Good
             Pause-ForKey
         }
@@ -221,6 +302,8 @@ do {
                 Write-Host ("  {0} Disabling {1}" -f $Theme.Snow, $t.Friendly) -ForegroundColor $Theme.Primary
                 Set-TargetStartup -Target $t -Mode Disabled
             }
+            Write-Host ""
+            Set-ExtraSettings -Mode Disable
             Write-Host ""
             Write-Host ("  {0} Done." -f $Theme.Snow) -ForegroundColor $Theme.Good
             Pause-ForKey
@@ -260,3 +343,4 @@ do {
         }
     }
 } while ($true)
+exit
