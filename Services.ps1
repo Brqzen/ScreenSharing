@@ -31,7 +31,6 @@ $Theme = [pscustomobject]@{
     Primary = "Cyan"
     Muted   = "DarkCyan"
     Warn    = "Yellow"
-    Bad     = "Red"
     Good    = "Green"
     Snow    = "*"
     Line    = ("-" * 44)
@@ -138,12 +137,12 @@ function Get-ExtraChecks {
     $noRecentCU = Get-RegValue "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer" "NoRecentDocsHistory"
     $trackDocs  = Get-RegValue "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" "Start_TrackDocs"
     $jumpOff = ($noRecentLM -eq 1) -or ($noRecentCU -eq 1) -or ($null -ne $trackDocs -and $trackDocs -eq 0)
-    $checks.Add([pscustomobject]@{ Other = "JumpLists";                     Status = if ($jumpOff) { "Disabled" } else { "Enabled" } })
+    $checks.Add([pscustomobject]@{ Other = "JumpLists";          Status = if ($jumpOff) { "Disabled" } else { "Enabled" } })
 
     $wait = Get-RegValue "HKLM:\SYSTEM\CurrentControlSet\Control" "WaitToKillServiceTimeout"
     $ms = 5000
     if ($null -ne $wait) { [void][int]::TryParse($wait.ToString().Trim(), [ref]$ms) }
-    $checks.Add([pscustomobject]@{ Other = "Service Threads";               Status = if ($ms -lt 5000) { "Terminated" } else { "Enabled" } })
+    $checks.Add([pscustomobject]@{ Other = "Service Threads";    Status = if ($ms -lt 5000) { "Terminated" } else { "Enabled" } })
 
     $dpsProc = $null
     try {
@@ -151,13 +150,13 @@ function Get-ExtraChecks {
         if ($dpsSvc -and $dpsSvc.ProcessId -gt 0) { $dpsProc = Get-Process -Id $dpsSvc.ProcessId -ErrorAction SilentlyContinue }
     } catch {}
     $dpsRunning = $null -ne $dpsProc
-    $checks.Add([pscustomobject]@{ Other = "DPS Tokens";                    Status = if ($dpsRunning) { "Enabled" } else { "Disabled" } })
+    $checks.Add([pscustomobject]@{ Other = "DPS Tokens";         Status = if ($dpsRunning) { "Enabled" } else { "Disabled" } })
 
     $actFeed = Get-RegValue "HKLM:\SOFTWARE\Policies\Microsoft\Windows\System" "EnableActivityFeed"
-    $checks.Add([pscustomobject]@{ Other = "Activities Cache";              Status = if ($actFeed -eq 0) { "Disabled" } else { "Enabled" } })
+    $checks.Add([pscustomobject]@{ Other = "Activities Cache";   Status = if ($actFeed -eq 0) { "Disabled" } else { "Enabled" } })
 
     $prefetch = Get-RegValue "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters" "EnablePrefetcher"
-    $checks.Add([pscustomobject]@{ Other = "EnablePrefetcher";              Status = if ($prefetch -eq 0) { "Disabled" } else { "Enabled" } })
+    $checks.Add([pscustomobject]@{ Other = "EnablePrefetcher";   Status = if ($prefetch -eq 0) { "Disabled" } else { "Enabled" } })
 
     return $checks
 }
@@ -182,8 +181,6 @@ function Remove-RegValue {
 }
 
 function Set-ExtraSettings {
-    param([ValidateSet("Enable","Disable")] [string] $Mode)
-
     $sid = try { [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value } catch { $null }
     $bamPaths = @("HKLM:\SYSTEM\CurrentControlSet\Services\bam\State\UserSettings")
     if ($sid) { $bamPaths += Join-Path $bamPaths[0] $sid }
@@ -191,86 +188,53 @@ function Set-ExtraSettings {
     foreach ($p in $bamPaths) {
         try {
             $acl = Get-Acl -Path $p -ErrorAction Stop
-            if ($Mode -eq "Enable") {
-                $acl.SetAccessRuleProtection($false, $false)
-            } else {
-                $acl.SetAccessRuleProtection($true, $true)
-            }
+            $acl.SetAccessRuleProtection($false, $false)
             Set-Acl -Path $p -AclObject $acl -ErrorAction SilentlyContinue
         } catch {}
     }
-    Write-Host ("  {0} BAM Inheritance: {1}" -f $Theme.Snow, $(if ($Mode -eq "Enable") { "Restored" } else { "Terminated" })) -ForegroundColor $Theme.Primary
+    Write-Host ("  {0} BAM Inheritance: Restored" -f $Theme.Snow) -ForegroundColor $Theme.Primary
 
     $polLM = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
     $polCU = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
     $advCU = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
-    if ($Mode -eq "Enable") {
-        Remove-RegValue $polLM "NoRecentDocsHistory"
-        Remove-RegValue $polCU "NoRecentDocsHistory"
-        Set-RegValue $advCU "Start_TrackDocs" 1
-    } else {
-        Set-RegValue $polCU "NoRecentDocsHistory" 1
-        Set-RegValue $advCU "Start_TrackDocs" 0
-    }
-    Write-Host ("  {0} JumpLists: {1}" -f $Theme.Snow, $(if ($Mode -eq "Enable") { "Enabled" } else { "Disabled" })) -ForegroundColor $Theme.Primary
+    Remove-RegValue $polLM "NoRecentDocsHistory"
+    Remove-RegValue $polCU "NoRecentDocsHistory"
+    Set-RegValue $advCU "Start_TrackDocs" 1
+    Write-Host ("  {0} JumpLists: Enabled" -f $Theme.Snow) -ForegroundColor $Theme.Primary
 
-    $ctlPath = "HKLM:\SYSTEM\CurrentControlSet\Control"
-    if ($Mode -eq "Enable") {
-        Set-RegValue $ctlPath "WaitToKillServiceTimeout" "5000" -Type "String"
-    } else {
-        Set-RegValue $ctlPath "WaitToKillServiceTimeout" "1000" -Type "String"
-    }
-    Write-Host ("  {0} Service Threads: {1}" -f $Theme.Snow, $(if ($Mode -eq "Enable") { "Enabled (5000ms)" } else { "Terminated (1000ms)" })) -ForegroundColor $Theme.Primary
+    Set-RegValue "HKLM:\SYSTEM\CurrentControlSet\Control" "WaitToKillServiceTimeout" "5000" -Type "String"
+    Write-Host ("  {0} Service Threads: Enabled (5000ms)" -f $Theme.Snow) -ForegroundColor $Theme.Primary
 
-    Write-Host ("  {0} DPS Tokens: {1} (follows DPS service)" -f $Theme.Snow, $(if ($Mode -eq "Enable") { "Enabled" } else { "Disabled" })) -ForegroundColor $Theme.Primary
+    Write-Host ("  {0} DPS Tokens: Enabled (follows DPS service)" -f $Theme.Snow) -ForegroundColor $Theme.Primary
 
-    $sysPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\System"
-    if ($Mode -eq "Enable") {
-        Remove-RegValue $sysPath "EnableActivityFeed"
-    } else {
-        Set-RegValue $sysPath "EnableActivityFeed" 0
-    }
-    Write-Host ("  {0} Activities Cache: {1}" -f $Theme.Snow, $(if ($Mode -eq "Enable") { "Enabled" } else { "Disabled" })) -ForegroundColor $Theme.Primary
+    Remove-RegValue "HKLM:\SOFTWARE\Policies\Microsoft\Windows\System" "EnableActivityFeed"
+    Write-Host ("  {0} Activities Cache: Enabled" -f $Theme.Snow) -ForegroundColor $Theme.Primary
 
-    $pfPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters"
-    if ($Mode -eq "Enable") {
-        Set-RegValue $pfPath "EnablePrefetcher" 3
-    } else {
-        Set-RegValue $pfPath "EnablePrefetcher" 0
-    }
-    Write-Host ("  {0} EnablePrefetcher: {1}" -f $Theme.Snow, $(if ($Mode -eq "Enable") { "Enabled" } else { "Disabled" })) -ForegroundColor $Theme.Primary
+    Set-RegValue "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters" "EnablePrefetcher" 3
+    Write-Host ("  {0} EnablePrefetcher: Enabled" -f $Theme.Snow) -ForegroundColor $Theme.Primary
 }
 
 function Set-TargetStartup {
-    param(
-        [Parameter(Mandatory)] $Target,
-        [ValidateSet("Automatic","Disabled")] $Mode
-    )
-
-    $scMode = if ($Mode -eq "Automatic") { "auto" } else { "disabled" }
+    param([Parameter(Mandatory)] $Target)
 
     if ($Target.Kind -eq "Service") {
         if (-not (Get-Service -Name $Target.Name -ErrorAction SilentlyContinue)) {
             Write-Host ("  {0} Missing service: {1}" -f $Theme.Snow, $Target.Name) -ForegroundColor $Theme.Warn
             return
         }
-
-        sc.exe config $Target.Name start= $scMode | Out-Null
-        if ($Mode -eq "Automatic") { try { Start-Service $Target.Name -ErrorAction SilentlyContinue } catch {} }
-        else                       { try { Stop-Service  $Target.Name -Force -ErrorAction SilentlyContinue } catch {} }
+        sc.exe config $Target.Name start= auto | Out-Null
+        try { Start-Service $Target.Name -ErrorAction SilentlyContinue } catch {}
         return
     }
 
-    # Driver
-    sc.exe config $Target.Name start= $scMode | Out-Null
+    sc.exe config $Target.Name start= auto | Out-Null
 }
 
 function Show-Menu {
     Write-Host ("  {0} Select an option:" -f $Theme.Snow) -ForegroundColor $Theme.Primary
     Write-Host ""
-    Write-Host "    1 - Enable  (set to Automatic)" -ForegroundColor $Theme.Primary
-    Write-Host "    2 - Disable (set to Disabled)" -ForegroundColor $Theme.Primary
-    Write-Host "    3 - Check status" -ForegroundColor $Theme.Primary
+    Write-Host "    1 - Enable services" -ForegroundColor $Theme.Primary
+    Write-Host "    2 - Check status" -ForegroundColor $Theme.Primary
     Write-Host "    0 - Exit" -ForegroundColor $Theme.Primary
     Write-Host ""
 }
@@ -281,34 +245,22 @@ do {
     Show-Menu
 
     Clear-ConsoleInputBuffer
-    $choice = Read-Host "  Enter 0, 1, 2, or 3"
+    $choice = Read-Host "  Enter 0, 1, or 2"
 
     switch ($choice) {
         "1" {
             Write-Host ""
             foreach ($t in $Targets) {
                 Write-Host ("  {0} Enabling {1}" -f $Theme.Snow, $t.Friendly) -ForegroundColor $Theme.Primary
-                Set-TargetStartup -Target $t -Mode Automatic
+                Set-TargetStartup -Target $t
             }
             Write-Host ""
-            Set-ExtraSettings -Mode Enable
+            Set-ExtraSettings
             Write-Host ""
             Write-Host ("  {0} Done." -f $Theme.Snow) -ForegroundColor $Theme.Good
             Pause-ForKey
         }
         "2" {
-            Write-Host ""
-            foreach ($t in $Targets) {
-                Write-Host ("  {0} Disabling {1}" -f $Theme.Snow, $t.Friendly) -ForegroundColor $Theme.Primary
-                Set-TargetStartup -Target $t -Mode Disabled
-            }
-            Write-Host ""
-            Set-ExtraSettings -Mode Disable
-            Write-Host ""
-            Write-Host ("  {0} Done." -f $Theme.Snow) -ForegroundColor $Theme.Good
-            Pause-ForKey
-        }
-        "3" {
             Clear-Host
             Show-Header
             Write-Host ("  {0} Status / StartMode" -f $Theme.Snow) -ForegroundColor $Theme.Primary
@@ -343,4 +295,3 @@ do {
         }
     }
 } while ($true)
-exit
