@@ -4,7 +4,7 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 if (-not $isAdmin) {
     Write-Host ""
     Write-Host "  WARNING: This script must be run as Administrator." -ForegroundColor Yellow
-    Write-Host "  Right-click PowerShell and choose 'Run as administrator', then try again." -ForegroundColor Yellow
+    Write-Host "  Choose 'Run as administrator', then try again." -ForegroundColor Yellow
     Write-Host ""
     Read-Host "  Press Enter to exit"
     exit 1
@@ -43,16 +43,10 @@ function Clear-ConsoleInputBuffer {
     }
 }
 
-function Pause-ForKey {
+function Pause-ForEnter {
     Clear-ConsoleInputBuffer
     Write-Host ""
-    Write-Host ("  {0} Press any key to continue..." -f $Theme.Snow) -ForegroundColor $Theme.Muted
-    try {
-        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-    } catch {
-        $null = Read-Host "  Press Enter to continue"
-    }
-    Clear-ConsoleInputBuffer
+    Read-Host ("  {0} Press Enter to continue" -f $Theme.Snow)
 }
 
 function Show-Header {
@@ -249,7 +243,8 @@ do {
 
     switch ($choice) {
         "1" {
-            Write-Host ""
+            Clear-Host
+            Show-Header
             foreach ($t in $Targets) {
                 Write-Host ("  {0} Enabling {1}" -f $Theme.Snow, $t.Friendly) -ForegroundColor $Theme.Primary
                 Set-TargetStartup -Target $t
@@ -258,7 +253,7 @@ do {
             Set-ExtraSettings
             Write-Host ""
             Write-Host ("  {0} Done." -f $Theme.Snow) -ForegroundColor $Theme.Good
-            Pause-ForKey
+            Pause-ForEnter
         }
         "2" {
             Clear-Host
@@ -285,13 +280,13 @@ do {
             foreach ($line in $checksText -split "`r?`n") {
                 Write-Host ("  {0}" -f $line) -ForegroundColor $Theme.Primary
             }
-            Pause-ForKey
+            Pause-ForEnter
         }
         "0" { return }
         default {
             Write-Host ""
             Write-Host ("  {0} Invalid choice." -f $Theme.Snow) -ForegroundColor $Theme.Warn
-            Pause-ForKey
+            Pause-ForEnter
         }
     }
 } while ($true)
