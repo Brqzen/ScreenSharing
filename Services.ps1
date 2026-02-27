@@ -217,7 +217,15 @@ function Set-TargetStartup {
             return
         }
         sc.exe config $Target.Name start= auto | Out-Null
-        try { Start-Service $Target.Name -ErrorAction SilentlyContinue } catch {}
+        $svc = Get-Service -Name $Target.Name -ErrorAction SilentlyContinue
+        if ($svc.Status -eq 'Running') { return }
+        try { sc.exe start $Target.Name 2>&1 | Out-Null } catch {}
+        for ($i = 0; $i -lt 5; $i++) {
+            Start-Sleep -Milliseconds 1500
+            $svc = Get-Service -Name $Target.Name -ErrorAction SilentlyContinue
+            if ($svc.Status -eq 'Running') { return }
+        }
+        Write-Host ("  {0} Failed to start: {1}" -f $Theme.Snow, $Target.Friendly) -ForegroundColor $Theme.Warn
         return
     }
 
